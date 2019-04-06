@@ -6,66 +6,93 @@
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
   </head>
   <body>
-    <form>
-      <input id="input" type="text" placeholder="paste your class string here" size="100"/>
-      <input type="submit" value="Simplify"/>
-    </form>
+    Filters out redundant breakpoint classes from the following responsive class types:
+    <ul>
+      <li>text-[breakpoint]-[alignment]</li>
+      <li>navbar-expand-[breakpoint]</li>
+      <li>table-[breakpoint]-responsive</li>
+      <li>d-[breakpoint]-[display]</li>
+      <li>flex-[breakpoint]-[layout]</li>
+      <li>flex-[breakpoint]-[grow/shrink]</li>
+      <li>[justify or align]-[breakpoint]-[alignment]</li>
+      <li>float-[breakpoint]-[direction]</li>
+      <li><s>[m or p]-[breakpoint]-#</s> <i>coming soon, maybe</i></li>
+      <li>col-[breakpoint]-#</li>
+      <li>offset-[breakpoint]-#</li>
+      <li>order-[breakpoint]-#</li>
+    </ul>
+    <input id="input" type="text" placeholder="paste your class string here" size="100"/>
     <pre id="output"></pre>
     <script>
-      const inputBox = document.getElementById("input");
-      inputBox.value = "text-center col-10 offset-1 col-sm-10 call-to-action offset-lg-0 offset-md-1 col-md-10 col-lg-4 col-xl-4";
-      const outputBox = document.getElementById("output");
-      const REGEX = /(?<type>col|offset)(-(?<breakpoint>sm|md|lg|xl))?-(?<value>\d+)/;
-
-      document.getElementsByTagName("form")[0]
-        .addEventListener("submit", function(event) {
-          event.preventDefault();
-          outputBox.textContent = simplify(inputBox.value);
-        });
+      const REGEXES = [
+                   /^text(-(?<breakPoint>sm|md|lg|xl))?-(?<value>left|right|center)$/,
+          /^navbar-expand(-(?<breakPoint>sm|md|lg|xl))?$/,
+                  /^table(-(?<breakPoint>sm|md|lg|xl))?-responsive$/,
+                      /^d(-(?<breakPoint>sm|md|lg|xl))?-(?<value>block|flex|inline|inline-block|inline-flex|none|table|table-cell)$/,
+                   /^flex(-(?<breakPoint>sm|md|lg|xl))?-(?<value>column|column-reverse|row|row-reverse|nowrap|wrap|wrap-reverse)$/,
+                   /^flex(-(?<breakPoint>sm|md|lg|xl))?-(?<value>grow-1|grow-0|shrink-1|shrink|0)$/,
+        /^justify-content(-(?<breakPoint>sm|md|lg|xl))?-(?<value>start|end|center|between|around)$/,
+          /^align-content(-(?<breakPoint>sm|md|lg|xl))?-(?<value>start|end|center|around|stretch)$/,
+            /^align-items(-(?<breakPoint>sm|md|lg|xl))?-(?<value>start|end|center|baseline|stretch)$/,
+          /^align-content(-(?<breakPoint>sm|md|lg|xl))?-(?<value>start|end|center|baseline|stretch)$/,
+                  /^float(-(?<breakPoint>sm|md|lg|xl))?-(?<value>left|right|none)$/,
+                 /^offset(-(?<breakPoint>sm|md|lg|xl))?-(?<value>\d+)$/,
+                    /^col(-(?<breakPoint>sm|md|lg|xl))?-(?<value>\d+)$/,
+                  /^order(-(?<breakPoint>sm|md|lg|xl))?-(?<value>\d+)$/,
+      ]
 
       const simplify = function removeRedundantElementsFromClassString(classString) {
-        const simplifiedClassList = [];
-        const bootstrapClasses = [];
-
-        // Walk through the original class list
-        classString.split(/\s/)
-          .forEach(className => {
-            if (REGEX.test(className)) {
-              // This is a boostrap class, save for analysis
-              bootstrapClasses.push(className);
-            } else {
-              // This is not a bootstrap class, it passes through
-              simplifiedClassList.push(className);
-            }
-          });
-
-        // Record the results of the regex, grouping by col/offset and breakpoint
-        // Note that conflicts are last-one-wins: The poorly-coded class string
-        // "col-md-3 col-md-6" is equivalent to just "col-md-6".
-        const matchesByTypeAndBreakpoint = {};
-        bootstrapClasses.map(className => REGEX.exec(className))
-          .forEach(match => matchesByTypeAndBreakpoint[match.groups.type + (match.groups.breakpoint || "")] = match)
+        const bootstrapClassGroups = group(classString.split(/\s/));
+        const simplifiedClassList = bootstrapClassGroups.alreadySimplified;
 
         // Keep track of the current col and offset widths
         const currentValues = {};
         ["", "sm", "md", "lg", "xl"].forEach(breakPoint => {
-          ["col", "offset"].forEach(type => {
-            let match = matchesByTypeAndBreakpoint[type + breakPoint];
-            if (match) {
-              currentValue = currentValues[type];
-              newValue = parseInt(match.groups.value);
-              if (currentValue !== newValue) {
-                // Only preserve class names that cause a change
-                currentValues[type] = newValue;
-                simplifiedClassList.push(match.input);
-              }
+          REGEXES.forEach(regex => {
+            const match = bootstrapClassGroups[regex][breakPoint];
+            if (match && currentValues[regex] !== match.groups.value) {
+              currentValues[regex] = match.groups.value;
+              simplifiedClassList.push(match.input);
             }
           });
         });
 
         // Rebuild the string for outputting
         return simplifiedClassList.join(" ");
-      }
+      };
+
+      // Input: string array
+      // Output: a map of regexes to regex matches,
+      //         WITH a catchall "no match" category (which has a null key)
+      const group = function classifyClassNamesByMatchingRegex(classNames) {
+        const groups = { alreadySimplified: [] };
+        REGEXES.forEach(regex => groups[regex] = {});
+
+        classNames.forEach(className => {
+          let matchFound = false;
+
+          REGEXES.forEach(regex => {
+            let match = regex.exec(className);
+            if (match) {
+              let breakPoint = match.groups.breakPoint || "";
+              groups[regex][breakPoint] = match;
+              matchFound = true;
+            }
+          });
+          
+          if (!matchFound) {
+            groups.alreadySimplified.push(className);
+          }
+        });
+
+        return groups;
+      };
+
+      const inputBox = document.getElementById("input");
+      const outputBox = document.getElementById("output");
+      inputBox.addEventListener("input", () => outputBox.textContent = simplify(inputBox.value));
+      inputBox.value = "text-center col-10 offset-1 col-sm-10 call-to-action offset-lg-0 offset-md-1 col-md-10 col-lg-4 col-xl-4";
+      inputBox.dispatchEvent(new Event("input"));
     </script>
     <footer class="fixed-bottom">
         How does it work? Check out the <a href="https://github.com/benj2240/bootstrap-simplifier">github repository.</a>
